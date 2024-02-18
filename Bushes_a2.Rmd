@@ -1,0 +1,84 @@
+---
+title: "Bushes"
+author: "eswst i; ,i;l"
+date: "2024-02-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+plants = read.csv("plants.csv")
+```
+
+```{r}
+head(plants)
+```
+
+
+```{r}
+# Assuming you have a dataframe called 'plants' containing columns 'height' and 'width'
+
+# Perform linear regression
+lm_model <- lm(height ~ width, data = plants)
+
+# Get the summary of the regression model
+summary(lm_model)
+
+# Extract coefficients
+intercept <- coef(lm_model)[1]
+slope <- coef(lm_model)[2]
+
+# Create plot
+plot(plants$width, plants$height, xlab = "Width of Plants", ylab = "Height of Plants", main = "Relationship between Plants Height and Width")
+abline(lm_model, col = "red")  # Overlay regression line
+
+# Discuss the result
+cat("The equation of the regression line is: Height = ", round(intercept, 2), "+", round(slope, 2), "* Width\n")
+cat("The slope of the regression line represents the change in height for a one-unit increase in width.\n")
+cat("To interpret the slope: For every one-unit increase in width, the height of the plant is expected to increase/decrease by", round(slope, 2), "units.\n")
+cat("To determine if the slope is significant, you can check the p-value associated with the 'width' coefficient in the summary output.\n")
+
+```
+
+```{r}
+# Assuming you have a dataframe called 'plants' containing columns 'height', 'width', and 'species'
+
+# Perform linear regression with interaction
+lm_model_interaction <- lm(height ~ width * species, data = plants)
+
+# Get the summary of the regression model
+summary(lm_model_interaction)
+
+# Create plot distinguishing species
+plot(plants$width, plants$height, xlab = "Width of Plants", ylab = "Height of Plants", main = "Relationship between Plants Height and Width by Species", col = as.numeric(plants$species))
+abline(lm_model_interaction, col = "blue")  # Overlay regression line
+
+# Add submodels for each species
+species_unique <- unique(plants$species)
+for (sp in species_unique) {
+  subdata <- subset(plants, species == sp)
+  lm_submodel <- lm(height ~ width, data = subdata)
+  abline(lm_submodel, col = as.numeric(sp), lty = 2)  # Dashed lines for submodels
+}
+
+# Check if species column has valid levels
+if (length(levels(plants$species)) > 0) {
+  # Add legend
+  legend("topright", legend = levels(plants$species), col = as.numeric(levels(plants_data$species)), pch = 1, lty = 1, title = "Species")
+}
+
+# Discuss the result
+cat("The regression line with interaction terms allows us to assess the effect of width on plant height while considering the differences between species.\n")
+cat("Each submodel represents the relationship between plant height and width for a specific species.\n")
+cat("By distinguishing between species, we can observe if there are differences in the relationship between plant height and width across different species.\n")
+
+```
+```{r}
+
+```
+

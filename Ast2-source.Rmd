@@ -1,0 +1,282 @@
+---
+title: "Ast2: The Dark Forest"
+date: "2024-02-12"
+output: "html_document"
+---
+
+# Electricity Consumption
+
+## Access the data
+
+[Data source](https://weather.gc.ca/city/pages/bc-45_metric_e.html)
+
+Hourly data interval:
+
+```sh
+for year in `seq 1998 2008`;do for month in `seq 1 12`;do wget --content-disposition "https://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=1706&Year=${year}&Month=${month}&Day=14&timeframe=1&submit= Download+Data" ;done;done
+```
+
+Note: to download the hourly data in UTC rather than LTC, please add &time=utc after format=csv in the wget statement
+
+Daily data interval:
+
+```sh
+for year in `seq 1998 2008`;do for month in `seq 1 1`;do wget --content-disposition "https://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=1706&Year=${year}&Month=${month}&Day=14&timeframe=2&submit= Download+Data" ;done;done
+```
+
+Monthly data interval (specific time period):
+
+```sh
+for year in `seq 1998 2008`;do for month in `seq 1 12`;do wget --content-disposition "https://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=1706&Year=${year}&Month=${month}&Day=14&timeframe=3&submit= Download+Data" ;done;done
+```
+
+Monthly data interval (station complete history):
+
+```sh
+for year in `seq 1998 2008`;do for month in `seq 1 1`;do wget --content-disposition "https://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=1706&Year=${year}&Month=${month}&Day=14&timeframe=3&submit= Download+Data" ;done;done
+```
+
+## The modified command
+
+```sh
+for year in `seq 2021 2024`;
+	do for month in `seq 1 1`;
+		do 
+		wget --content-disposition "https://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=51423&Year=${year}&Month=${month}&Day=14&timeframe=2&submit= Download+Data" ;
+	done;
+done
+
+# "KAMLOOPS A","BRITISH COLUMBIA","1163781","51423","71887","YKA","50.7","-120.45","504209000","-1202655000","345.3","2013","2023","2013","2023","2013","2023","",""
+
+```
+
+```{r results=FALSE}
+ECON_DATA_SOURCE_PATH = "data/consumption_20240208.csv"
+TEMP_DATA_SOURCE_PATH = "data/temp.csv"
+ECON = read.csv(ECON_DATA_SOURCE_PATH)
+TEMP = read.csv(TEMP_DATA_SOURCE_PATH)
+# Check the number of NAs, The header names are kept original.
+# sum(sapply(TEMP$Mean.Temp...C., function(x) sum(is.na(x))))
+# sum(sapply(ECON$Net.Consumption..kWh., function(x) sum(is.na(x))))
+TEMP$Date
+ECON$Date = sapply(ECON$Date_interval, function(x) substring(x,first=1 ,last=10))
+DATA_MERGED = merge(ECON, TEMP, by = "Date")
+DATA_MERGED
+```
+
+```{r}
+lmod1 <- lm(DATA_MERGED$Econ_kWh ~ DATA_MERGED$Mean.Temp)
+
+plot(DATA_MERGED$Econ_kWh ~ DATA_MERGED$Mean.Temp, xlab = "Temperature (°C)", ylab = "Electricity Consumption (kWh)")
+abline(lmod1)
+
+mod1fit = function(x){lmod1$coefficients[1]+lmod1$coefficients[2]*x}
+temperature <- c(-40, -20, 0, 20, 40)
+mod1estimate = data.frame(Mean.Temp = temperature, Econ_kWh = mod1fit(temperature))
+```
+
+Same thing using `ggplot2`
+
+```{r}
+library(ggplot2)
+ggplot(data = DATA_MERGED, aes(x = Mean.Temp, y = Econ_kWh)) +
+  xlim(-40,40)+
+  geom_point(color = "blue") +  # scatter plot of data points
+  #geom_smooth(method = "lm", se = FALSE, color = "red") +  # linear regression line
+  stat_function(fun=mod1fit)+
+  geom_point(data=mod1estimate, color = "red", size = 4, shape = 1, )+
+  geom_point(data=mod1estimate, color = "orange")+
+  labs(x = "Temperature (°C)", 
+       y = "Electricity Consumption (kWh)") +
+  theme_minimal()
+```
+
+
+Using the following linear regression model:
+
+$$
+\mathbf{y}_{econ} = -0.19582 \mathbf{x}_{temp} + 15.42925
+$$
+
+Where $\mathbf{x}_{temp}$ is the outside temperature (in °C), and $\mathbf{y}_{econ}$ is the electricity consumption (in kWh). Our conclusion is: 
+
+
+The Electricity consumption would decrease when the outside temperature increase.
+
+```{r}
+lmod1$coefficients
+lmod1 |> summary()
+
+mod1fit(temperature)
+
+
+```
+
+From the scatterplot, we can see a "concave" pattern, showing strong non-linearality as the electricity consumption first decrease then increase when the temperature goes from -40 °C to 40 °C.
+
+```{r}
+library(ggplot2)
+DATA_MERGED["Mean.Temp.Squared"] = (DATA_MERGED$Mean.Temp)^2
+lmod2 <- lm(DATA_MERGED$Econ_kWh ~ DATA_MERGED$Mean.Temp + DATA_MERGED$Mean.Temp.Squared)
+
+mod2fit <- function(x){lmod2$coefficients[1]+lmod2$coefficients[2]*x+lmod2$coefficients[3]*x^2}
+
+mod2estimate = data.frame(Mean.Temp = temperature, Econ_kWh = mod2fit(temperature))
+
+mod2estimate
+#plot(DATA_MERGED$Econ_kWh ~ DATA_MERGED$Mean.Temp, xlab = "Temperature (°C)", ylab = "Electricity Consumption (kWh)")
+#lines(DATA_MERGED$Mean.Temp[ix],predict(lmod2)[ix], col='red')
+```
+
+\begin{tabular}{r|r}
+\hline
+Mean.Temp & Econ\_kWh\\
+\hline
+-40 & 87.10993\\
+\hline
+-20 & 38.67409\\
+\hline
+0 & 13.77471\\
+\hline
+20 & 12.41178\\
+\hline
+40 & 34.58531\\
+\hline
+\end{tabular}
+
+
+```{r results='asis'}
+knitr::kable(mod2estimate, format = "latex")
+```
+
+
+
+```{r}
+ggplot(data = DATA_MERGED, aes(x = Mean.Temp, y = Econ_kWh)) +
+  xlim(-40,40)+
+  geom_point(color = "blue") +  # scatter plot of data points
+  #geom_smooth(method = "lm", se = TRUE, color = "red") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  stat_function(fun=mod2fit)+
+  labs(x = "Temperature (°C)", 
+       y = "Electricity Consumption (kWh)") +
+  geom_point(data=mod2estimate, color = "red", size = 4, shape = 1, )+
+  geom_point(data=mod2estimate, color = "orange")+
+  theme_minimal()
+```
+
+```{r}
+plants = read.csv("plants.csv")
+
+lm_model <- lm(height ~ width, data = plants)
+
+summary(lm_model)
+
+plot(plants$width, plants$height, xlab = "Width of Plants", ylab = "Height of Plants", main = "Relationship between Plants Height and Width")
+abline(lm_model, col = "red")  # Overlay regression line
+```
+
+Ignoring spicies
+
+```{r}
+ggplot(data = plants, aes(x = width, y = height)) +
+  geom_point(color = "blue") +  # scatter plot of data points
+  geom_smooth(method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_point(data = data.frame(width=plants$width, height=predict(lm_model)))+
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+```
+
+Not Ignoring species
+
+```{r}
+#Specie A
+ggplot(data = subset(plants, species == "A") , aes(x = width, y = height)) +
+  geom_point(color = "blue") +  # scatter plot of data points
+  geom_smooth(method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+```
+
+```{r}
+#Specie B
+ggplot(data = subset(plants, species == "B") , aes(x = width, y = height)) +
+  geom_point(color = "blue") +  # scatter plot of data points
+  geom_smooth(method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+```
+
+```{r}
+#Specie C
+ggplot(data = subset(plants, species == "C") , aes(x = width, y = height)) +
+  geom_point(color = "blue") +  # scatter plot of data points
+  geom_smooth(method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+```
+
+```{r}
+#Specie D
+ggplot(data = subset(plants, species == "D") , aes(x = width, y = height)) +
+  geom_point(color = "blue") +  # scatter plot of data points
+  geom_smooth(method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+```
+
+```{r}
+#Specie E
+ggplot(data = subset(plants, species == "E") , aes(x = width, y = height)) +
+  geom_point(color = "blue") +  # scatter plot of data points
+  geom_smooth(method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data = plants  , aes(x = width, y = height)) +
+  geom_point(data = subset(plants, species == "E"), color = "navy", shape = 1) +  # E
+  geom_smooth(data =  subset(plants, species == "E"), method = "lm", se = F, color = "black") +  # linear regression line
+  geom_point(data = subset(plants, species == "D"), color = "blue", shape = 2) +  # E
+  geom_smooth(data =  subset(plants, species == "D"), method = "lm", se = F, color = "black") +  # linear regression line
+  geom_point(data = subset(plants, species == "C"), color = "mediumslateblue", shape = 3) +  # E
+  geom_smooth(data =  subset(plants, species == "C"), method = "lm", se = F, color = "black") +  # linear regression line
+  geom_point(data = subset(plants, species == "B"), color = "cornflowerblue", shape = 4) +  # E
+  geom_smooth(data =  subset(plants, species == "B"), method = "lm", se = F, color = "black") +  # linear regression line
+  geom_point(data = subset(plants, species == "A"), color = "blueviolet", shape = 5) +  # E
+  geom_smooth(data =  subset(plants, species == "A"), method = "lm", se = F, color = "black") +  # linear regression line
+  #geom_smooth(method = "lm", formula = y ~ poly(x, 2), se = TRUE, color = "green") +  # polynomial fit curve (quadratic)
+  labs(x = "Width of Plants", 
+       y = "Height of Plants") +
+  theme_minimal()
+  choose(6,3)
+```
+
+```{r}
+qqnorm(residuals(lm_model))
+lm_model
+summary(lm_model)
+
+lm_modelA <- lm(height ~ width, subset(plants, species == "A"))
+lm_modelB <- lm(height ~ width, subset(plants, species == "B"))
+lm_modelC <- lm(height ~ width, subset(plants, species == "C"))
+lm_modelD <- lm(height ~ width, subset(plants, species == "D"))
+lm_modelE <- lm(height ~ width, subset(plants, species == "E"))
+summary(lm_modelE)
+```
+
+
+
